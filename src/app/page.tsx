@@ -286,6 +286,9 @@ export default function Home() {
               For members with limited digital literacy: large buttons, minimal text, audio feedback and visible progress. The Pi
               runs the interface and peripherals; AI stays in the cloud for the MVP.
             </p>
+            <Link href="/kiosk" className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-leaf hover:underline">
+              Open kiosk mode <ArrowRight size={14} />
+            </Link>
             <ul className="mt-8 grid grid-cols-2 gap-3 text-sm">
               {[[Cpu, "Raspberry Pi + display"], [Mic, "USB / I2S microphone"], [Volume2, "Speaker"], [Camera, "Optional document camera"], [Wifi, "Wi-Fi connectivity"], [FileSearch, "Same backend as web"]].map(([Icon, t]) => {
                 const I = Icon as typeof Cpu;

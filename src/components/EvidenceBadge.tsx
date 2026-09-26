@@ -1,4 +1,4 @@
-import type { Evidence } from "@/lib/demo";
+import type { Evidence } from "@/lib/shared";
 
 const STYLE: Record<Evidence, { label: string; cls: string; dot: string }> = {
   strong: { label: "Strong evidence", cls: "bg-leaf-soft text-leaf-dark", dot: "bg-leaf" },

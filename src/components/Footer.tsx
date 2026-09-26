@@ -19,14 +19,17 @@ export default function Footer() {
           <ul className="mt-3 space-y-2 text-muted">
             <li><Link href="/assistant" className="hover:text-ink">Assistant</Link></li>
             <li><Link href="/grievance" className="hover:text-ink">File / track grievance</Link></li>
+            <li><Link href="/documents" className="hover:text-ink">Understand a document</Link></li>
+            <li><Link href="/finance" className="hover:text-ink">Loan &amp; deposit calculator</Link></li>
+            <li><Link href="/kiosk" className="hover:text-ink">Kiosk mode</Link></li>
             <li><Link href="/admin" className="hover:text-ink">Authority dashboard</Link></li>
           </ul>
         </div>
         <div className="text-sm">
           <p className="font-semibold">Important</p>
           <p className="mt-3 text-muted">
-            Prototype. Provides information, not legal or financial advice. Grievances are stored locally in this demo
-            and are not sent to any government system.
+            Provides information, not legal or financial advice. Grievances are recorded in SahyogAI for the reviewing
+            authority; they are not automatically filed with any government portal.
           </p>
         </div>
       </div>

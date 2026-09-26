@@ -3,10 +3,10 @@ import { Menu } from "lucide-react";
 import Logo from "./Logo";
 
 const links = [
-  { href: "/#features", label: "Features" },
-  { href: "/#how", label: "How it works" },
-  { href: "/#kiosk", label: "Kiosk" },
   { href: "/grievance", label: "Grievance" },
+  { href: "/documents", label: "Documents" },
+  { href: "/finance", label: "Finance" },
+  { href: "/kiosk", label: "Kiosk" },
   { href: "/admin", label: "Authority" },
 ];
 

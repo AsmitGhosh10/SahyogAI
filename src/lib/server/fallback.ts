@@ -1,18 +1,6 @@
-// Demo engine for the prototype UI. Keyword intent detection + canned, source-labelled answers.
-// ponytail: keyword matching stands in for the FastAPI /api/chat + legal RAG backend; swap `answer()` for a fetch when it exists.
-
-export type Lang = "en" | "hi" | "bn";
-export type Evidence = "strong" | "limited" | "insufficient";
-export type Status = "Submitted" | "Under Review" | "Info Requested" | "Forwarded" | "Resolved";
-
-export const STATUSES: Status[] = ["Submitted", "Under Review", "Info Requested", "Forwarded", "Resolved"];
-export const LANGS: { id: Lang; label: string; speech: string }[] = [
-  { id: "hi", label: "हिंदी", speech: "hi-IN" },
-  { id: "bn", label: "বাংলা", speech: "bn-IN" },
-  { id: "en", label: "English", speech: "en-IN" },
-];
-export const STATES = ["Jharkhand", "West Bengal", "Bihar", "Odisha", "Uttar Pradesh", "Multi-State"];
-export const COOP_TYPES = ["PACS", "Dairy Cooperative", "Credit Society", "Housing Society", "Multi-State Cooperative"];
+// Keyword fallback used when no Anthropic credentials are configured. Canned guidance only; never claims a verified source.
+import "server-only";
+import type { ChatResponse, Evidence, GrievanceAnalysis, Lang } from "@/lib/shared";
 
 type Intent = "voting" | "membership" | "deposit" | "loan" | "fraud" | "interest" | "unknown";
 
@@ -38,17 +26,6 @@ export function detectLang(text: string): Lang {
   if (/[ऀ-ॿ]/.test(text)) return "hi";
   return "en";
 }
-
-export type Answer = {
-  intent: string;
-  topic: string;
-  evidence: Evidence;
-  text: string;
-  steps: string[];
-  source?: { doc: string; section: string; jurisdiction: string; applies: string; verified: string };
-  offerGrievance?: boolean;
-  warning?: boolean;
-};
 
 type Copy = { topic: string; text: string; steps: string[] };
 const T: Record<Exclude<Intent, "unknown">, Record<Lang, Copy>> = {
@@ -90,6 +67,12 @@ const UNKNOWN: Record<Lang, string> = {
   bn: "যাচাইকৃত উৎসে এর নির্ভরযোগ্য উত্তর দেওয়ার মতো যথেষ্ট তথ্য পাইনি। আপনার রাজ্য, সমবায়ের ধরন জানাবেন বা নথি দেবেন?",
 };
 
+export const NO_SOURCE: Record<Lang, string> = {
+  en: "No verified document for your state is loaded yet, so treat this as general guidance and confirm with your society or the Registrar's office.",
+  hi: "आपके राज्य का कोई सत्यापित दस्तावेज़ अभी उपलब्ध नहीं है, इसलिए इसे सामान्य जानकारी मानें और अपनी समिति या रजिस्ट्रार कार्यालय से पुष्टि करें।",
+  bn: "আপনার রাজ্যের কোনো যাচাইকৃত নথি এখনও নেই, তাই এটিকে সাধারণ তথ্য হিসেবে নিন এবং সমিতি বা নিবন্ধক অফিসে যাচাই করুন।",
+};
+
 export const ASK_STATE: Record<Lang, string> = {
   en: "Rules depend on your state and cooperative type. Select them above for a jurisdiction-matched answer.",
   hi: "नियम आपके राज्य और समिति के प्रकार पर निर्भर करते हैं। सटीक उत्तर के लिए ऊपर चुनें।",
@@ -99,111 +82,55 @@ export const ASK_STATE: Record<Lang, string> = {
 const INTENT_LABEL: Record<Intent, string> = {
   voting: "Cooperative Governance",
   membership: "Cooperative Rights",
-  deposit: "Grievance · Financial",
+  deposit: "Grievance",
   loan: "PACS Services",
   interest: "Financial Literacy",
   fraud: "Fraud Awareness",
   unknown: "Unclear",
 };
 
-export function answer(message: string, lang: Lang, state: string, coop: string): Answer {
+const LEGAL: Intent[] = ["voting", "membership", "deposit", "loan"];
+
+export function fallbackAnswer(message: string, selected: Lang): Omit<ChatResponse, "sources" | "jurisdiction" | "kind"> & { legal: boolean } {
+  const lang = detectLang(message) === "en" ? selected : detectLang(message);
   const intent = detectIntent(message);
   if (intent === "unknown") {
-    return { intent: INTENT_LABEL.unknown, topic: "—", evidence: "insufficient", text: UNKNOWN[lang], steps: [] };
+    return { mode: "demo", language: lang, intent: INTENT_LABEL.unknown, topic: "—", answer: UNKNOWN[lang], steps: [], evidence: "insufficient", clarifying_question: null, offer_grievance: false, safety_warning: false, legal: false };
   }
   const c = T[intent][lang];
-  const legal = intent === "voting" || intent === "membership" || intent === "deposit" || intent === "loan";
-  const jurisdictionKnown = Boolean(state && coop);
+  const legal = LEGAL.includes(intent);
   return {
+    mode: "demo",
+    language: lang,
     intent: INTENT_LABEL[intent],
     topic: c.topic,
-    // Legal answers are only "strong" once jurisdiction is pinned down (PRD §7, §10).
-    evidence: !legal || jurisdictionKnown ? "strong" : "limited",
-    text: c.text,
+    answer: c.text,
     steps: c.steps,
-    warning: intent === "fraud",
-    offerGrievance: intent === "voting" || intent === "deposit" || intent === "membership",
-    source: legal
-      ? {
-          doc: jurisdictionKnown ? `${state} Cooperative Societies Act & Rules` : "State Cooperative Societies Act (state not set)",
-          section: "Demo KB — provision reference shown once the verified corpus is loaded",
-          jurisdiction: state === "Multi-State" ? "Central (Multi-State)" : state || "Not confirmed",
-          applies: coop || "Not confirmed",
-          verified: "Demo data",
-        }
-      : undefined,
+    // Canned text is general guidance, never "strong": that level needs a matching verified source.
+    evidence: (legal ? "limited" : "strong") as Evidence,
+    clarifying_question: legal ? ASK_STATE[lang] : null,
+    offer_grievance: intent === "voting" || intent === "deposit" || intent === "membership",
+    safety_warning: intent === "fraud",
+    legal,
   };
 }
 
-// ---------- Grievances (localStorage; demo only, never sent anywhere) ----------
-
-export type Grievance = {
-  id: string;
-  category: string;
-  subcategory: string;
-  description: string;
-  cooperative: string;
-  district: string;
-  state: string;
-  when: string;
-  amount?: string;
-  language: Lang;
-  status: Status;
-  createdAt: string;
-  history: { status: Status; at: string; note?: string }[];
-};
-
-const KEY = "sahyog.grievances";
-
-export function classify(text: string): { category: string; subcategory: string; amount?: string; evidence: string[] } {
+export function fallbackClassify(text: string): GrievanceAnalysis {
   const intent = detectIntent(text);
-  const amount = text.match(/₹\s?[\d,]+|rs\.?\s?[\d,]+|[\d,]{4,}/i)?.[0]?.replace(/rs\.?\s?/i, "₹");
+  const amount = text.match(/₹\s?[\d,]+|rs\.?\s?[\d,]{3,}/i)?.[0]?.replace(/rs\.?\s?/i, "₹") ?? "";
   const map: Record<Intent, [string, string, string[]]> = {
     deposit: ["Financial", "Deposit repayment", ["Deposit receipt", "Passbook", "Written request to society"]],
     loan: ["Loan", "PACS loan / repayment", ["Loan sanction letter", "Repayment receipts"]],
-    voting: ["Cooperative Governance", "Election / Voting", ["Membership details", "Share certificate", "Voter list copy"]],
+    voting: ["Election", "Voting rights", ["Membership details", "Share certificate", "Voter list copy"]],
     membership: ["Membership", "Member rights / information", ["Membership details", "Written request copy"]],
     interest: ["Financial", "Interest / charges dispute", ["Loan papers", "Account statement"]],
     fraud: ["Fraud", "Suspected fraud", ["Call/SMS screenshots", "Transaction reference"]],
-    unknown: ["General", "Other", ["Any supporting document"]],
+    unknown: ["Other", "General", ["Any supporting document"]],
   };
-  const [category, subcategory, evidence] = map[intent];
-  return { category, subcategory, amount, evidence };
+  const [category, subcategory, required_documents] = map[intent];
+  return {
+    mode: "demo", category, subcategory, amount, cooperative: "", district: "", state: "", when: "",
+    summary: text.slice(0, 280), priority: intent === "fraud" ? "high" : "normal", required_documents,
+    missing_questions: [],
+  };
 }
-
-export function newId() {
-  return `GRV-2026-${String(Math.floor(Math.random() * 100000)).padStart(5, "0")}`;
-}
-
-export function loadGrievances(): Grievance[] {
-  try {
-    const own = JSON.parse(localStorage.getItem(KEY) || "[]") as Grievance[];
-    return [...own, ...SEED.filter((s) => !own.some((o) => o.id === s.id))];
-  } catch {
-    return SEED;
-  }
-}
-
-export function saveGrievance(g: Grievance) {
-  try {
-    const own = JSON.parse(localStorage.getItem(KEY) || "[]") as Grievance[];
-    localStorage.setItem(KEY, JSON.stringify([g, ...own.filter((o) => o.id !== g.id)]));
-  } catch {
-    /* private mode: demo keeps working, just without persistence */
-  }
-}
-
-const d = (days: number) => new Date(Date.now() - days * 864e5).toISOString();
-const seed = (id: string, category: string, subcategory: string, description: string, cooperative: string, district: string, state: string, language: Lang, status: Status, days: number, amount?: string): Grievance => ({
-  id, category, subcategory, description, cooperative, district, state, when: `${days} days ago`, language, status, amount,
-  createdAt: d(days),
-  history: [{ status: "Submitted", at: d(days) }, ...(status !== "Submitted" ? [{ status, at: d(Math.max(0, days - 2)) }] : [])],
-});
-
-export const SEED: Grievance[] = [
-  seed("GRV-2026-00421", "Financial", "Deposit repayment", "Meri cooperative ne mera ₹20,000 ka deposit return nahi kiya.", "ABC PACS", "Jamtara", "Jharkhand", "hi", "Under Review", 9, "₹20,000"),
-  seed("GRV-2026-00418", "Cooperative Governance", "Election / Voting", "আমার সমবায় সমিতি আমাকে ভোট দিতে দিচ্ছে না।", "Uttar Dinajpur Dairy Coop", "Uttar Dinajpur", "West Bengal", "bn", "Submitted", 3),
-  seed("GRV-2026-00407", "Loan", "PACS loan / repayment", "Loan repayment entered twice in my passbook.", "Dumka Krishak PACS", "Dumka", "Jharkhand", "en", "Info Requested", 14, "₹12,500"),
-  seed("GRV-2026-00396", "Membership", "Member rights / information", "Society refused to show audited accounts at the AGM.", "Gaya Credit Society", "Gaya", "Bihar", "hi", "Forwarded", 21),
-  seed("GRV-2026-00380", "Financial", "Interest / charges dispute", "Extra processing fee charged on KCC renewal.", "Cuttack PACS", "Cuttack", "Odisha", "en", "Resolved", 33, "₹1,800"),
-];
